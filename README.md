@@ -102,3 +102,24 @@ j1.create_relationship(
 ```python
 j1.delete_relationship(relationship_id='<id-of-relationship-to-delete>')
 ```
+
+
+
+##### Bulk upload entities
+This requires three API calls. First do a source + integrationID call to get the instance job ID, use that to send a query, then finalize the job
+
+```python
+    bulk_upload_id = j1.start_bulk_upload(
+        integration_instance_id=os.getenv('INTEGRATION_INSTANCE_ID'),
+        source='integration-managed'
+    )
+
+    bulk = j1.bulk_upload(
+         synch_instance_id=bulk_upload_id,
+         entities=entities
+    )
+
+    j1.finish_bulk_upload(
+         synch_instance_id=bulk_upload_id
+    )
+```

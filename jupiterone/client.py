@@ -49,6 +49,7 @@ class JupiterOneClient:
         self.url = url
         self.query_endpoint = self.url + '/graphql'
         self.rules_endpoint = self.url + '/rules/graphql'
+        self.bulk_upload_endpoint = self.url + '/persister/synchronization/jobs'
         self.headers = {
             'Authorization': 'Bearer {}'.format(self.token),
             'LifeOmic-Account': self.account
@@ -86,6 +87,7 @@ class JupiterOneClient:
         data = {
             'query': query
         }
+        
         if variables:
             data.update(variables=variables)
 
@@ -94,6 +96,31 @@ class JupiterOneClient:
         # It is still unclear if all responses will have a status
         # code of 200 or if 429 will eventually be used to 
         # indicate rate limitting.  J1 devs are aware.
+        if response.status_code == 200:
+            if response._content:
+                content = json.loads(response._content)
+                if 'errors' in content:
+                    errors = content['errors']
+                    if len(errors) == 1:
+                        if '429' in errors[0]['message']:
+                            raise JupiterOneApiRetryError('JupiterOne API rate limit exceeded')
+                    raise JupiterOneApiError(content.get('errors'))
+                return response.json()
+
+        elif response.status_code in [429, 500]:
+            raise JupiterOneApiRetryError('JupiterOne API rate limit exceeded')
+
+        else:
+            content = json.loads(response._content)
+            raise JupiterOneApiError('{}:{}'.format(response.status_code, content.get('error')))
+
+
+    @retry(**RETRY_OPTS)
+    def _execute_bulk_query(self, url, variables: Dict = None) -> Dict:
+        """ Executes query against bulk query endpoint """
+
+        response = requests.post(url, headers=self.headers, json=variables)
+
         if response.status_code == 200:
             if response._content:
                 content = json.loads(response._content)
@@ -181,6 +208,33 @@ class JupiterOneClient:
             variables=variables
         )
         return response['data']['createEntity']
+
+    def bulk_upload(self, synch_instance_id, entities) -> Dict:
+        
+        data = {
+            'entities': entities
+        }
+
+        bulk_upload_url = self.bulk_upload_endpoint + '/' + synch_instance_id
+        
+        response = self._execute_bulk_query(url=bulk_upload_url + '/entities', variables=data)
+        return response
+    
+    def start_bulk_upload(self, **kwargs) -> Dict:
+        variables = {
+            'source': 'integration-managed',
+            'integrationInstanceId':  kwargs.pop('integration_instance_id')
+        }
+
+        response = self._execute_bulk_query(url=self.bulk_upload_endpoint,variables=variables)
+        return response['job']['id']
+
+    def finish_bulk_upload(self, synch_instance_id) -> Dict:
+
+        finish_upload_url = self.bulk_upload_endpoint + '/' + synch_instance_id + '/finalize'
+
+        response = self._execute_bulk_query(url=finish_upload_url,variables={})
+        return response['job']['id']
 
     def delete_entity(self, entity_id: str = None) -> Dict:
         """ Deletes an entity from the graph.  Note this is a hard delete.
