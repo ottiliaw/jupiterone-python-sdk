@@ -210,14 +210,10 @@ class JupiterOneClient:
         return response['data']['createEntity']
 
     def bulk_upload(self, synch_instance_id, entities) -> Dict:
-        
-        data = {
-            'entities': entities
-        }
 
         bulk_upload_url = self.bulk_upload_endpoint + '/' + synch_instance_id
         
-        response = self._execute_bulk_query(url=bulk_upload_url + '/entities', variables=data)
+        response = self._execute_bulk_query(url=bulk_upload_url + '/upload', variables=entities)
         return response
     
     def start_bulk_upload(self, **kwargs) -> Dict:
